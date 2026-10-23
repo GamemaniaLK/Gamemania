@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Real Carrom - Play vs Bot</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#254c45,#101d20);color:#fff;font-family:system-ui,Arial,sans-serif;display:flex;justify-content:center;min-height:100vh}
+.app{width:min(100%,650px);padding:14px 12px 24px;text-align:center}
+h1{margin:4px 0 2px;font-size:clamp(24px,6vw,34px);letter-spacing:1px} .sub{margin:0 0 12px;color:#d6e8df;font-size:13px}
+.hud{display:flex;gap:8px;justify-content:space-between;align-items:center;margin:10px 0}
+.stat{background:#102b28;border:1px solid #46766b;border-radius:12px;padding:8px 10px;flex:1;font-size:13px}.stat b{display:block;font-size:20px;color:#ffdb85}
+canvas{width:100%;height:auto;display:block;touch-action:none;border-radius:12px;box-shadow:0 12px 30px #0008}
+.controls{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:12px 0}
+button{border:0;border-radius:10px;padding:11px 15px;font-size:14px;font-weight:750;background:#f5c65c;color:#2a2112;box-shadow:0 3px 0 #b47d24;cursor:pointer}
+button.secondary{background:#e8eee9;box-shadow:0 3px 0 #a8b8ae}button:active{transform:translateY(2px);box-shadow:none}
+#message{background:#102b28;border:1px solid #46766b;border-radius:10px;padding:10px;margin:8px 0;font-size:14px;min-height:42px}
+.help{font-size:12px;line-height:1.5;color:#d6e8df;text-align:left;background:#122b2a;border-radius:10px;padding:10px 12px}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🎱 REAL CARROM</h1><p class="sub">Play against the Bot • Mobile friendly</p>
+<div class="hud">
+ <div class="stat">YOU <b id="you">0</b><span id="yourCoins">White</span></div>
+ <div class="stat">TURN <b id="turn">YOU</b><span id="left">19 coins left</span></div>
+ <div class="stat">BOT <b id="bot">0</b><span>Black</span></div>
+</div>
+<canvas id="game" width="600" height="600" aria-label="Carrom board game"></canvas>
+<div id="message">Your turn! Drag the striker to aim, then release to shoot.</div>
+<div class="controls">
+<button id="reset">↻ New Game</button><button id="aim" class="secondary">Show Aim: ON</button><button id="power" class="secondary">Power: NORMAL</button>
+</div>
+<div class="help"><b>How to play</b><br>• Drag the striker left/right along your baseline to position it.<br>• Pull from the striker in the direction opposite your shot, then release to shoot.<br>• Pocket white coins to score. Queen gives 3 points if pocketed; the bot plays black.<br>• This is a playable single-file HTML version; physics and rules are simplified compared with Carrom Pool.</div>
+</div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=600,H=600, board={x:38,y:38,w:524,h:524};
+const pockets=[{x:60,y:60},{x:540,y:60},{x:60,y:540},{x:540,y:540}];
+const R=12,SR=16, pocketR=23;
+let coins=[],striker,turn='you',scoreYou=0,scoreBot=0,shots=0,aimOn=true,powerMode=1,drag=null, moving=false,gameOver=false,queenPending=null;
+const el=id=>document.getElementById(id);
+function newGame(){
+ coins=[];scoreYou=0;scoreBot=0;turn='you';shots=0;gameOver=false;queenPending=null;
+ // Standard compact central pack: queen center, alternating black/white rings
+ coins.push(makeCoin(300,300,'queen'));
+ const ring1=[...Array(6)].map((_,i)=>i*Math.PI/3);
+ ring1.forEach((a,i)=>coins.push(makeCoin(300+25*Math.cos(a),300+25*Math.sin(a),i%2?'white':'black')));
+ const ring2=[...Array(12)].map((_,i)=>i*Math.PI/6);
+ ring2.forEach((a,i)=>coins.push(makeCoin(300+49*Math.cos(a),300+49*Math.sin(a),i%2?'black':'white')));
+ striker={x:300,y:475,vx:0,vy:0,r:SR,type:'striker',pocketed:false};
+ updateHud();setMsg('Your turn! Drag the striker to aim, then release to shoot.');draw();
+}
+function makeCoin(x,y,type){return{x,y,vx:0,vy:0,r:R,type,pocketed:false};}
+function updateHud(){
+ el('you').textContent=scoreYou;el('bot').textContent=scoreBot;el('turn').textContent=gameOver?'END':turn==='you'?'YOU':'BOT';
+ el('left').textContent=coins.filter(c=>!c.pocketed).length+' coins left';
+}
+function setMsg(s){el('message').textContent=s;}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // outer frame
+ ctx.fillStyle='#63391f';roundRect(8,8,584,584,18);ctx.fill();
+ ctx.fillStyle='#d9a96c';roundRect(20,20,560,560,12);ctx.fill();
+ // playing surface
+ const g=ctx.createLinearGradient(0,30,0,570);g.addColorStop(0,'#f6dfb1');g.addColorStop(1,'#e8c58e');
+ ctx.fillStyle=g;roundRect(38,38,524,524,4);ctx.fill();
+ // decorative border
+ ctx.strokeStyle='#784526';ctx.lineWidth=3;ctx.strokeRect(52,52,496,496);
+ // baseline and circles
+ ctx.lineWidth=3;ctx.strokeStyle='#a7462d';
+ [ [150,475,450,475],[150,125,450,125] ].forEach(a=>{ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(a[2],a[3]);ctx.stroke();});
+ [ [300,475],[300,125] ].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],34,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(p[0],p[1],27,0,Math.PI*2);ctx.stroke();});
+ // diagonal arrows
+ ctx.strokeStyle='#a7462d';ctx.lineWidth=2;
+ [[100,100,135,135],[500,100,465,135],[100,500,135,465],[500,500,465,465]].forEach(a=>{ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(a[2],a[3]);ctx.stroke()});
+ // pockets
+ pockets.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,pocketR+3,0,Math.PI*2);ctx.fillStyle='#9c6a3c';ctx.fill();ctx.beginPath();ctx.arc(p.x,p.y,pocketR,0,Math.PI*2);ctx.fillStyle='#17120f';ctx.fill();ctx.beginPath();ctx.arc(p.x-4,p.y-5,10,0,Math.PI*2);ctx.fillStyle='#30251d';ctx.fill();});
+ // center rings
+ ctx.strokeStyle='#a7462d';ctx.lineWidth=2;ctx.beginPath();ctx.arc(300,300,66,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(300,300,58,0,Math.PI*2);ctx.stroke();
+ // coins
+ coins.forEach(c=>{if(!c.pocketed)drawPiece(c)});
+ if(striker&&!striker.pocketed)drawPiece(striker);
+ if(drag&&aimOn&&turn==='you'&&!moving&&!gameOver){
+  const dx=drag.startX-drag.x,dy=drag.startY-drag.y;
+  const len=Math.hypot(dx,dy);if(len>3){const scale=Math.min(1,len/110);
+   ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#1684c7';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(striker.x,striker.y);ctx.lineTo(striker.x+dx*1.3,striker.y+dy*1.3);ctx.stroke();ctx.setLineDash([]);
+   const ax=striker.x+dx*1.3,ay=striker.y+dy*1.3;ctx.beginPath();ctx.arc(ax,ay,5+scale*4,0,Math.PI*2);ctx.fillStyle='#1684c7';ctx.fill();ctx.restore();
+  }
+ }
+}
+function roundRect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function drawPiece(c){
+ ctx.save();ctx.shadowColor='#0006';ctx.shadowBlur=4;ctx.shadowOffsetY=3;
+ ctx.beginPath();ctx.arc(c.x,c.y,c.r,0,Math.PI*2);
+ let fill=c.type==='white'?'#f8f0d8':c.type==='black'?'#292a2c':c.type==='queen'?'#c92835':'#dce8e9';
+ ctx.fillStyle=fill;ctx.fill();ctx.shadowColor='transparent';
+ ctx.lineWidth=c.type==='queen'?3:2;ctx.strokeStyle=c.type==='black'?'#111':c.type==='white'?'#bca77d':c.type==='queen'?'#79131e':'#39717d';ctx.stroke();
+ ctx.beginPath();ctx.arc(c.x-c.r*.25,c.y-c.r*.28,c.r*.25,0,Math.PI*2);ctx.fillStyle=c.type==='black'?'#626366':'#ffffff88';ctx.fill();
+ if(c.type==='queen'){ctx.beginPath();ctx.arc(c.x,c.y,4,0,Math.PI*2);ctx.fillStyle='#ffd966';ctx.fill();}
+ if(c.type==='striker'){ctx.beginPath();ctx.arc(c.x,c.y,c.r-4,0,Math.PI*2);ctx.strokeStyle='#167db5';ctx.lineWidth=3;ctx.stroke();ctx.beginPath();ctx.arc(c.x,c.y,3,0,Math.PI*2);ctx.fillStyle='#167db5';ctx.fill();}
+ ctx.restore();
+}
+function pos(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};}
+canvas.addEventListener('pointerdown',e=>{
+ if(turn!=='you'||moving||gameOver||striker.pocketed)return;
+ const p=pos(e);
+ if(Math.hypot(p.x-striker.x,p.y-striker.y)<35){
+  drag={startX:striker.x,startY:striker.y,x:p.x,y:p.y,mode:'aim'};canvas.setPointerCapture(e.pointerId);draw();
+ }
+});
+canvas.addEventListener('pointermove',e=>{
+ if(!drag)return;const p=pos(e);drag.x=p.x;drag.y=p.y;
+ if(Math.abs(p.y-drag.startY)<40&&Math.abs(p.x-drag.startX)>8){
+  striker.x=Math.max(150,Math.min(450,p.x));striker.y=475;drag.startX=striker.x;drag.startY=striker.y;
+ }
+ draw();
+});
+canvas.addEventListener('pointerup',e=>{
+ if(!drag)return;const dx=drag.startX-drag.x,dy=drag.startY-drag.y;const len=Math.hypot(dx,dy);drag=null;
+ if(len>12){shoot(dx/len,dy/len,Math.min(15,len/8)*powerMode);}
+ draw();
+});
+function shoot(dx,dy,power){
+ if(moving||gameOver)return;
+ striker.vx=dx*power;striker.vy=dy*power;moving=true;shots++;setMsg(turn==='you'?'Shot!':'Bot is shooting...');requestAnimationFrame(tick);
+}
+function tick(){
+ if(!moving)return;
+ let active=false;
+ const all=[...coins.filter(c=>!c.pocketed),striker].filter(c=>!c.pocketed);
+ for(const c of all){
+  c.x+=c.vx;c.y+=c.vy;c.vx*=.986;c.vy*=.986;
+  if(Math.hypot(c.vx,c.vy)<.12){c.vx=0;c.vy=0;}else active=true;
+  // bounce from inner board boundaries
+  const min=58+c.r,max=542-c.r;
+  if(c.x<min){c.x=min;c.vx=Math.abs(c.vx)*.82}
+  if(c.x>max){c.x=max;c.vx=-Math.abs(c.vx)*.82}
+  if(c.y<min){c.y=min;c.vy=Math.abs(c.vy)*.82}
+  if(c.y>max){c.y=max;c.vy=-Math.abs(c.vy)*.82}
+  // pocketing if close enough
+  for(const p of pockets){
+   if(Math.hypot(c.x-p.x,c.y-p.y)<pocketR-3){
+    if(c.type==='striker'){c.pocketed=true;c.vx=c.vy=0;setMsg(turn==='you'?'Foul! Striker pocketed.':'Bot pocketed the striker.');}
+    else if(!c.pocketed){c.pocketed=true;c.vx=c.vy=0;
+      if(c.type==='queen'){if(turn==='you'){scoreYou+=3;queenPending='you'}else{scoreBot+=3;queenPending='bot'}}
+      else if(c.type==='white'&&turn==='you')scoreYou++;
+      else if(c.type==='black'&&turn==='bot')scoreBot++;
+      setMsg(c.type==='queen'?'Queen pocketed! +3 points.':turn==='you'?'Nice shot!':'Bot pocketed a coin.');
+    }break;
+   }
+  }
+ }
+ // resolve collisions
+ const live=all.filter(c=>!c.pocketed);
+ for(let i=0;i<live.length;i++)for(let j=i+1;j<live.length;j++){
+  const a=live[i],b=live[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),min=a.r+b.r;
+  if(d>0&&d<min){const nx=dx/d,ny=dy/d,over=min-d;a.x-=nx*over/2;a.y-=ny*over/2;b.x+=nx*over/2;b.y+=ny*over/2;
+   const rel=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
+   if(rel>0){const impulse=rel*.88;a.vx-=impulse*nx;a.vy-=impulse*ny;b.vx+=impulse*nx;b.vy+=impulse*ny;}
+  }
+ }
+ updateHud();draw();
+ if(active){requestAnimationFrame(tick)}else{
+  moving=false;
+  if(striker.pocketed){striker.pocketed=false;striker.x=turn==='you'?300:300;striker.y=turn==='you'?475:125;striker.vx=striker.vy=0;}
+  if(coins.every(c=>c.pocketed)){gameOver=true;updateHud();setMsg(scoreYou>scoreBot?'🏆 You win!':scoreBot>scoreYou?'Bot wins!':'Draw game!');draw();return;}
+  turn=turn==='you'?'bot':'you';updateHud();
+  if(turn==='bot'){setMsg('Bot is aiming...');setTimeout(botTurn,650)}
+  else{striker.x=300;striker.y=475;setMsg('Your turn! Drag the striker to aim, then release to shoot.');draw();}
+ }
+}
+function botTurn(){
+ if(turn!=='bot'||gameOver||moving)return;
+ // aim at a random remaining target with a simple shot
+ const targets=coins.filter(c=>!c.pocketed&&c.type!=='white');
+ if(!targets.length){turn='you';updateHud();return}
+ const target=targets[Math.floor(Math.random()*targets.length)];
+ const dx=target.x-striker.x,dy=target.y-striker.y,dist=Math.hypot(dx,dy)||1;
+ // bot shots generally toward board center/target
+ shoot(dx/dist,dy/dist,Math.min(10,5+dist/90));
+}
+el('reset').addEventListener('click',newGame);
+el('aim').addEventListener('click',()=>{aimOn=!aimOn;el('aim').textContent='Show Aim: '+(aimOn?'ON':'OFF');draw()});
+el('power').addEventListener('click',()=>{powerMode=powerMode===1?1.35:powerMode===1.35?.7:1;el('power').textContent='Power: '+(powerMode===1?'NORMAL':powerMode>1?'STRONG':'SOFT')});
+newGame();
+})();
+</script>
+</body>
+</html>
