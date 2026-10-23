@@ -187,5 +187,15 @@ el('power').addEventListener('click',()=>{powerMode=powerMode===1?1.35:powerMode
 newGame();
 })();
 </script>
+ <!-- Visitor Counter -->
+<div style="text-align:center; color:#ccc; font-family:Arial; margin-top:15px; font-size:13px; padding-bottom:10px;">
+  👁️ Total Players: <span id="visits">Loading...</span>
+</div>
+<script>
+  fetch('https://api.counterapi.dev/v1/gamemanialk/carrom/up')
+    .then(r=>r.json()).then(d=>{
+      document.getElementById('visits').innerText = d.count;
+    }).catch(()=>{document.getElementById('visits').innerText="Live";})
+</script>
 </body>
 </html>
