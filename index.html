@@ -191,11 +191,10 @@ newGame();
 <div style="text-align:center; color:#ccc; font-family:Arial; margin-top:15px; font-size:13px; padding-bottom:10px;">
   👁️ Total Players: <span id="visits">Loading...</span>
 </div>
-<script>
-  fetch('https://api.counterapi.dev/v1/gamemanialk/carrom/up')
-    .then(r=>r.json()).then(d=>{
-      document.getElementById('visits').innerText = d.count;
-    }).catch(()=>{document.getElementById('visits').innerText="Live";})
+<script><div style="text-align:center; margin-top:15px; padding-bottom:15px;">
+  <img src="https://hits.sh/gamemanialk.github.io/Gamemania.svg?label=Total%20Players&extraCount=100&color=0a8754&style=flat" alt="visitors" />
+  <div style="color:#888; font-size:11px; font-family:Arial; margin-top:5px;">Live Players Count</div>
+ </div>
 </script>
 </body>
 </html>
